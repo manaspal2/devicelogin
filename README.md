@@ -1,2 +1,2 @@
 # devicelogin
-This shell script helps to login to router and vm hosts
+This expect script helps to login to router and vm hosts
