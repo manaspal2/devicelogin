@@ -1,0 +1,50 @@
+#!/usr/bin/expect -f
+set timeout 10
+set machinename [lindex $argv 0] 
+
+set reachable 0
+if {$machinename ne ""} {
+	spawn ping -c 5 $machinename.juniper.net
+        expect {
+		"0% packet loss" {
+			puts "This device is reachable"
+			set reachable 1
+		}
+	}
+} else {
+	puts "Pass the shell name in the command line"
+	exit 1
+}
+
+if {$reachable == 1} {
+	spawn ssh -o StrictHostKeyChecking=accept-new mpal@$machinename.juniper.net
+} else {
+	exit 1
+}
+
+expect {
+	"password:" {
+		send "@HungrySKW.2012\r\r\r"
+         } "(yes/no)?" {
+		send "yes\r"
+		expect {
+			"Password:"{
+                	           send "@HungrySKW.2012\r\r\r"
+		        } "password:"{
+				   send "@HungrySKW.2012\r\r\r"
+		        }  eof {
+				exit
+			}
+		       }
+         } "Password:" {
+	        send "@HungrySKW.2012\r\r\r"	
+	 } eof {
+               exit 
+         }
+        }
+
+expect -re "^mpal.*"
+send "pwd\r"
+interact
+exit
+
