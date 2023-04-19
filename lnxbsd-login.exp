@@ -1,0 +1,275 @@
+#!/usr/bin/expect -f
+set timeout 20
+
+# Declaration of all variables
+set eng 0
+set spg 0
+set ip 0
+set not_reachable 0
+set data_entry 0
+set domain_found 0
+
+if {[file exists outputfile.txt]} {
+	set database [exec cat outputfile.txt]
+	puts "******************************************"
+	puts $database
+	puts "******************************************\n\n\n"
+	puts "Do you want to login to any of these devices? "
+	puts "If yes, select the device name and put as input when it is asked."
+}
+
+set chan [open outputfile.txt a] 
+
+puts "If username/pwd combination is other than root/Embe1mpls, please enter when asked else press ENTER"
+send_user "Enter server name: "
+expect_user -re "(.*)\n"
+set server_name $expect_out(1,string)
+puts $server_name
+
+set f [open "outputfile.txt"]
+set hosts [split [read $f] "\n"]
+close $f
+
+foreach host $hosts {
+    puts $host
+    if {[regexp -nocase $server_name $host]} {
+        puts "Device info already in database"
+        set data_entry 1
+        break
+    } else {
+    puts "Device info not in database"
+    }
+}
+
+send_user "Enter user name:"
+expect_user -re "(.*)\n"
+set user_name $expect_out(1,string)
+if {$user_name eq ""} {
+    set user_name root
+}
+
+send_user "Enter password:"
+expect_user -re "(.*)\n"
+set pwd $expect_out(1,string)
+if {$pwd eq ""} {
+    set pwd Embe1mpls
+}
+
+if {[regexp {^([0-9]{1,3}\.){3}[0-9]{1,3}} $server_name]} {
+	puts "This is an ip"
+	spawn ping -c 2 $server_name
+	expect {
+            "100.0% packet loss" {
+                    puts "This device is unreachable"
+                    set not_reachable 1
+            }
+			"packet loss" {
+				puts "This device is reachable"
+				set ip 1
+				set not_reachable 0
+			}
+			"Unknown host" {
+				puts "This device is not reachable"
+				set ip 1
+				set not_reachable 1
+			}
+	}
+	puts "Ping output:"
+	puts "==============================================================="
+	puts $expect_out(buffer)
+	puts "==============================================================="
+} elseif {[regexp "englab.juniper.net" $server_name]} {
+	puts "Domain is already found"
+	set domain_found 1
+	spawn ping -c 2 $server_name
+	expect {
+            "100.0% packet loss" {
+                    puts "This device is unreachable"
+                    set not_reachable 1
+            }
+			"packet loss" {
+				puts "This device is reachable"
+				set ip 1
+				set not_reachable 0
+			}
+			"Unknown host" {
+				puts "This device is not reachable"
+				set ip 1
+				set not_reachable 1
+			}
+	}
+	puts "Ping output:"
+	puts "==============================================================="
+	puts $expect_out(buffer)
+	puts "==============================================================="
+} elseif {[regexp "spglab.juniper.net" $server_name]} {
+	puts "Domain is already found"
+	set domain_found 1
+	spawn ping -c 2 $server_name
+	expect {
+            "100.0% packet loss" {
+                    puts "This device is unreachable"
+                    set not_reachable 1
+            }
+			"packet loss" {
+				puts "This device is reachable"
+				set ip 1
+				set not_reachable 0
+			}
+			"Unknown host" {
+				puts "This device is not reachable"
+				set ip 1
+				set not_reachable 1
+			}
+	}
+	puts "Ping output:"
+	puts "==============================================================="
+	puts $expect_out(buffer)
+	puts "==============================================================="
+} else {
+	puts "This is not an ip"
+	spawn ping -c 3 $server_name.englab.juniper.net
+	expect {
+            "100.0% packet loss" {
+                puts "This device is unreachable"
+                set not_reachable 1
+            }
+			"packet loss" {
+				puts "This device is in englab domain"
+				set eng 1
+			}
+			"Unknown host" {
+				puts "This device is not in englab domain"
+				set eng 0
+			}
+	}
+	puts "Ping output:"
+	puts "==============================================================="
+	puts $expect_out(buffer)
+	puts "==============================================================="
+
+	spawn ping -c 3 $server_name.spglab.juniper.net
+	expect {
+            "100.0% packet loss" {
+                puts "This device is unreachable"
+                set not_reachable 1
+            }
+	        "packet loss" {
+	            puts "This device is in spglab domain"
+				set spg 1
+	        }
+		"Unknown host" {
+	            puts "This device is not in spglab domain"
+				set spg 0
+		}
+	}
+	puts "Ping output:"
+	puts "==============================================================="
+	puts $expect_out(buffer)
+	puts "==============================================================="
+}
+
+if { $eng == 1 && $not_reachable==0 } {
+	set domain ".englab.juniper.net"
+	send "ssh-keygen -R $server_name.englab.juniper.net"
+	sleep 5
+	set var $expect_out(buffer)
+	puts $var
+    send "ssh-keyscan -H $server_name.englab.juniper.net >> ~/.ssh/known_hosts"
+    sleep 5
+	set var $expect_out(buffer)
+	puts $var
+    spawn ssh -o StrictHostKeyChecking=accept-new $user_name@$server_name.englab.juniper.net 
+} elseif { $spg == 1 && $not_reachable==0 } {
+	set domain ".spglab.juniper.net"
+	send "ssh-keygen -R $server_name.spglab.juniper.net"
+	sleep 5
+    send "ssh-keyscan -H $server_name.spglab.juniper.net >> ~/.ssh/known_hosts"
+    sleep 5
+	set var $expect_out(buffer)
+	puts $var
+    spawn ssh -o StrictHostKeyChecking=accept-new $user_name@$server_name.spglab.juniper.net
+} elseif { $ip==1 && $not_reachable==0 } {
+	send "ssh-keygen -R $server_name"
+	sleep 5
+	send "ssh-keyscan -H $server_name >> ~/.ssh/known_hosts"
+	sleep 5
+	set var $expect_out(buffer)
+	puts $var
+	spawn ssh -o StrictHostKeyChecking=accept-new $user_name@$server_name
+} elseif { $domain_found==1 && $not_reachable==0 } {
+	send "ssh-keygen -R $server_name"
+	sleep 5
+	send "ssh-keyscan -H $server_name >> ~/.ssh/known_hosts"
+	sleep 5
+	set var $expect_out(buffer)
+	puts $var
+	spawn ssh -o StrictHostKeyChecking=accept-new $user_name@$server_name
+} else {
+    puts "These devices are neither in spg nor eng domain OR not alive"
+}
+
+catch {
+	expect {
+	    "password:" {
+			send "$pwd\r\r\r"
+            expect *
+            send "pwd\r"
+            expect *
+            interact
+			if {$data_entry==0 && $domain_found==0} {
+				append server_name $domain
+            	puts $chan "Device name: $server_name , User name: $user_name , Password: $pwd"
+            	close $chan
+			}
+		} 
+		"(yes/no)?" {
+			send "yes\r"
+			expect "password:"
+			send "$pwd\r\r\r"
+            expect *
+            send "pwd\r"
+			expect *
+			interact
+			if {$data_entry==0 && $domain_found==0} {
+				append server_name $domain
+            	puts $chan "Device name: $server_name , User name: $user_name , Password: $pwd"
+            	close $chan
+			}
+		}
+	    "Password:" {
+			send "$pwd\r\r\r"
+            expect *
+            send "pwd\r"
+            expect *
+			interact
+			if {$data_entry==0 && $domain_found==0} {
+				append server_name $domain
+            	puts $chan "Device name: $server_name , User name: $user_name , Password: $pwd"
+            	close $chan
+			}
+		}    
+		"(yes/no/\[fingerprint\])?" {
+			send "yes"
+			expect "Password:"
+			send "$pwd\r\r\r"
+            expect *
+            send "pwd\r"
+			expect *
+			interact
+			if {$data_entry==0 && $domain_found==0} {
+				append server_name $domain
+            	puts $chan "Device name: $server_name , User name: $user_name , Password: $pwd"
+            	close $chan
+			}
+		}
+	    "or not known" {
+			puts "This is not in englab domain"
+		}
+	} 
+} error_msg
+
+if {$error_msg ne ""} {
+    puts "Error: $error_msg"
+    exit 1
+}
